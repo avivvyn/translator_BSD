@@ -1,6 +1,5 @@
 package com.example.gametranslator
 
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.*
@@ -13,19 +12,17 @@ import androidx.appcompat.app.AppCompatActivity
 
 class RegionSelectorActivity : AppCompatActivity() {
 
-    // Координаты рамки в пикселях экрана (left, top, right, bottom)
     private var selLeft = 0f
     private var selTop = 0f
     private var selRight = 0f
     private var selBottom = 0f
 
-    // Для перетаскивания
     private var dragMode = NONE
     private var lastX = 0f
     private var lastY = 0f
+    private val touchSlop = 80f
 
-    // Толщина касания для краёв (в пикселях)
-    private val touchSlop = 60f
+    private lateinit var overlay: RegionOverlayView
 
     companion object {
         private const val NONE = 0
@@ -39,65 +36,61 @@ class RegionSelectorActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Начальная рамка — нижняя треть экрана
         val dm = resources.displayMetrics
         val screenW = dm.widthPixels.toFloat()
         val screenH = dm.heightPixels.toFloat()
-        selLeft = screenW * 0.05f
-        selTop = screenH * 0.65f
-        selRight = screenW * 0.95f
-        selBottom = screenH * 0.95f
 
-        // Основной контейнер
+        // Загружаем сохранённую рамку, если есть
+        val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+        selLeft = prefs.getFloat("region_left", screenW * 0.05f)
+        selTop = prefs.getFloat("region_top", screenH * 0.65f)
+        selRight = prefs.getFloat("region_right", screenW * 0.95f)
+        selBottom = prefs.getFloat("region_bottom", screenH * 0.95f)
+
         val root = FrameLayout(this)
 
-        // Тёмный фон
         val bg = View(this)
-        bg.setBackgroundColor(0x88000000.toInt())
+        bg.setBackgroundColor(0x99000000.toInt())
         root.addView(bg, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT
         ))
 
-        // Кастомный View для рисования рамки
-        val overlay = RegionOverlayView(this)
+        overlay = RegionOverlayView(this)
         root.addView(overlay, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT
         ))
 
-        // Кнопка «Готово»
         val doneBtn = Button(this).apply {
             text = "Готово"
             setOnClickListener { saveAndFinish() }
         }
-        val btnParams = FrameLayout.LayoutParams(
+        root.addView(doneBtn, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT
         ).apply {
-            gravity = android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL
+            gravity = android.view.Gravity.BOTTOM or android.view.Gravity.START
             bottomMargin = 80
-        }
-        root.addView(doneBtn, btnParams)
+            leftMargin = 60
+        })
 
-        // Кнопка «Отмена»
         val cancelBtn = Button(this).apply {
             text = "Отмена"
             setOnClickListener { finish() }
         }
-        val cancelParams = FrameLayout.LayoutParams(
+        root.addView(cancelBtn, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT
         ).apply {
             gravity = android.view.Gravity.BOTTOM or android.view.Gravity.END
             bottomMargin = 80
-            rightMargin = 40
-        }
-        root.addView(cancelBtn, cancelParams)
+            rightMargin = 60
+        })
 
         setContentView(root)
 
-        // Обработка касаний по всему контейнеру
+        // Обработчик таскания — на overlay
         overlay.setOnTouchListener { _, event ->
             handleTouch(event)
             true
@@ -136,9 +129,7 @@ class RegionSelectorActivity : AppCompatActivity() {
                 }
                 lastX = x
                 lastY = y
-                findViewById<View>(android.R.id.content).invalidate()
-                // Перерисовываем оверлей
-                (findViewById<FrameLayout>(android.R.id.content).getChildAt(1) as? RegionOverlayView)?.invalidate()
+                overlay.invalidate()  // ← ГЛАВНОЕ ИСПРАВЛЕНИЕ
             }
         }
     }
@@ -158,7 +149,7 @@ class RegionSelectorActivity : AppCompatActivity() {
         private val borderPaint = Paint().apply {
             color = Color.GREEN
             style = Paint.Style.STROKE
-            strokeWidth = 6f
+            strokeWidth = 8f
         }
         private val cornerPaint = Paint().apply {
             color = Color.WHITE
@@ -168,11 +159,9 @@ class RegionSelectorActivity : AppCompatActivity() {
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
 
-            // Рамка
             canvas.drawRect(selLeft, selTop, selRight, selBottom, borderPaint)
 
-            // Уголки (маркеры для перетаскивания)
-            val size = 30f
+            val size = 40f
             canvas.drawRect(selLeft - size/2, selTop - size/2, selLeft + size/2, selTop + size/2, cornerPaint)
             canvas.drawRect(selRight - size/2, selTop - size/2, selRight + size/2, selTop + size/2, cornerPaint)
             canvas.drawRect(selLeft - size/2, selBottom - size/2, selLeft + size/2, selBottom + size/2, cornerPaint)

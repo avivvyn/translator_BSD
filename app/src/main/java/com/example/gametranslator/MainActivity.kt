@@ -50,12 +50,16 @@ class MainActivity : AppCompatActivity() {
         }
         val regionBtn = findViewById<Button>(R.id.regionButton)
         regionBtn.setOnClickListener {
-            startActivity(Intent(this@MainActivity, RegionSelectorActivity::class.java))
-        }
-        stopBtn.setOnClickListener {
-            stopService(Intent(this, ScreenCaptureService::class.java))
-            stopService(Intent(this, OverlayService::class.java))
-            Toast.makeText(this, "Stopped", Toast.LENGTH_SHORT).show()
+            if (!Settings.canDrawOverlays(this)) {
+                Toast.makeText(this, "Разреши оверлей", Toast.LENGTH_LONG).show()
+                startActivity(Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")
+                ))
+                return@setOnClickListener
+            }
+            startService(Intent(this@MainActivity, FloatingButtonService::class.java))
+            Toast.makeText(this, "Плавающая кнопка ⚙ включена", Toast.LENGTH_LONG).show()
         }
     }
 
