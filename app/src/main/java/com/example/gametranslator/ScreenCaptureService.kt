@@ -3,6 +3,7 @@ package com.example.gametranslator
 import android.app.*
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
@@ -33,7 +34,11 @@ class ScreenCaptureService : Service() {
         val data = intent.getParcelableExtra<Intent>("data") ?: return START_NOT_STICKY
 
         // ШАГ 1: Запускаем foreground-сервис с типом mediaProjection ДО всего
-        startForeground(1, buildNotification())
+               if (Build.VERSION.SDK_INT >= 29) {
+            startForeground(1, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+        } else {
+            startForeground(1, buildNotification())
+        }
 
         // ШАГ 2: Получаем MediaProjection ПОСЛЕ startForeground
         val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
