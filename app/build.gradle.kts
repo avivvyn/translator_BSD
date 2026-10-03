@@ -25,7 +25,9 @@ android {
 }
 
 dependencies {
+    implementation("com.google.mlkit:text-recognition-japanese:16.0.0")
     implementation("androidx.core:core-ktx:1.13.1")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.17.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")

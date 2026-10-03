@@ -34,7 +34,7 @@ class ScreenCaptureService : Service() {
         val data = intent.getParcelableExtra<Intent>("data") ?: return START_NOT_STICKY
 
         // ШАГ 1: Запускаем foreground-сервис с типом mediaProjection ДО всего
-               if (Build.VERSION.SDK_INT >= 29) {
+        if (Build.VERSION.SDK_INT >= 29) {
             startForeground(1, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
         } else {
             startForeground(1, buildNotification())
@@ -97,7 +97,7 @@ class ScreenCaptureService : Service() {
                 try {
                     val bitmap = captureFrame()
                     if (bitmap != null) {
-                        val jpText = OcrHelper.recognize(this@ScreenCaptureService, bitmap)
+                        val jpText = OcrHelper.recognize(bitmap)
                         if (jpText.isNotBlank()) {
                             val apiKey = getSharedPreferences("settings", Context.MODE_PRIVATE)
                                 .getString("deepl_key", "") ?: ""
@@ -114,24 +114,24 @@ class ScreenCaptureService : Service() {
     }
 
     private fun captureFrame(): Bitmap? {
-        val image = imageReader?.acquireLatestImage() ?: return null
+        val img = imageReader?.acquireLatestImage() ?: return null
         return try {
-            val planes = image.planes
+            val planes = img.planes
             val buffer = planes[0].buffer
-            val pixelStride = planes[0].pixelStride
-            val rowStride = planes[0].rowStride
-            val rowPadding = rowStride - pixelStride * image.width
-            val bmp = Bitmap.createBitmap(
-                image.width + rowPadding / pixelStride,
-                image.height, Bitmap.Config.ARGB_8888
-            )
+            val ps = planes[0].pixelStride
+            val rs = planes[0].rowStride
+            val pad = rs - ps * img.width
+            val w = img.width + pad / ps
+            val h = img.height
+            val config = Bitmap.Config.ARGB_8888
+            val bmp = Bitmap.createBitmap(w, h, config)
             bmp.copyPixelsFromBuffer(buffer)
-            Bitmap.createBitmap(bmp, 0, 0, image.width, image.height)
+            val result = Bitmap.createBitmap(bmp, 0, 0, w, h)
+            result
         } finally {
-            image.close()
+            img.close()
         }
     }
-
     override fun onDestroy() {
         scope.cancel()
         virtualDisplay?.release()

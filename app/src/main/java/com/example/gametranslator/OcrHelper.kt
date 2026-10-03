@@ -1,42 +1,38 @@
 package com.example.gametranslator
 
-import android.content.Context
 import android.graphics.Bitmap
-import com.googlecode.tesseract.android.TessBaseAPI
-import java.io.File
-import java.io.FileOutputStream
+import android.util.Log
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 object OcrHelper {
 
-    private var tess: TessBaseAPI? = null
+    private const val TAG = "OcrHelper"
 
-    private fun init(context: Context) {
-        if (tess != null) return
-        val tessDir = File(context.filesDir, "tessdata")
-        if (!tessDir.exists()) tessDir.mkdirs()
-        val langFile = File(tessDir, "jpn.traineddata")
-        if (!langFile.exists()) {
-            try {
-                context.assets.open("jpn.traineddata").use { input ->
-                    FileOutputStream(langFile).use { output ->
-                        input.copyTo(output)
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-        tess = TessBaseAPI().apply {
-            init(context.filesDir.absolutePath, "jpn")
-        }
+    private val recognizer by lazy {
+        TextRecognition.getClient(JapaneseTextRecognizerOptions.Builder().build())
     }
 
-    fun recognize(context: Context, bitmap: Bitmap): String {
+    suspend fun recognize(bitmap: Bitmap): String {
         return try {
-            init(context)
-            tess?.setImage(bitmap)
-            tess?.utF8Text?.trim() ?: ""
+            val image = InputImage.fromBitmap(bitmap, 0)
+            suspendCancellableCoroutine { cont ->
+                recognizer.process(image)
+                    .addOnSuccessListener { visionText ->
+                        val text = visionText.text.trim()
+                        Log.d(TAG, "Распознано: $text")
+                        cont.resume(text)
+                    }
+                    .addOnFailureListener { e ->
+                        Log.e(TAG, "Ошибка ML Kit: ${e.message}", e)
+                        cont.resume("")
+                    }
+            }
         } catch (e: Exception) {
+            Log.e(TAG, "Исключение: ${e.message}", e)
             ""
         }
     }
