@@ -126,11 +126,31 @@ class ScreenCaptureService : Service() {
             val config = Bitmap.Config.ARGB_8888
             val bmp = Bitmap.createBitmap(w, h, config)
             bmp.copyPixelsFromBuffer(buffer)
-            val result = Bitmap.createBitmap(bmp, 0, 0, w, h)
-            result
+            val full = Bitmap.createBitmap(bmp, 0, 0, w, h)
+
+            // Обрезка по сохранённой области
+            val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+            val left = prefs.getFloat("region_left", -1f)
+            val top = prefs.getFloat("region_top", -1f)
+            val right = prefs.getFloat("region_right", -1f)
+            val bottom = prefs.getFloat("region_bottom", -1f)
+
+            if (left < 0 || top < 0 || right <= left || bottom <= top) {
+                return full
+            }
+
+            val cropLeft = left.toInt().coerceIn(0, w - 1)
+            val cropTop = top.toInt().coerceIn(0, h - 1)
+            val cropRight = right.toInt().coerceIn(cropLeft + 1, w)
+            val cropBottom = bottom.toInt().coerceIn(cropTop + 1, h)
+            val cropW = cropRight - cropLeft
+            val cropH = cropBottom - cropTop
+
+            Bitmap.createBitmap(full, cropLeft, cropTop, cropW, cropH)
         } finally {
             img.close()
         }
+    }
     }
     override fun onDestroy() {
         scope.cancel()

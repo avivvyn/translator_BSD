@@ -48,7 +48,10 @@ class MainActivity : AppCompatActivity() {
             val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             startActivityForResult(mpm.createScreenCaptureIntent(), REQUEST_CAPTURE)
         }
-
+        val regionBtn = findViewById<Button>(R.id.regionButton)
+        regionBtn.setOnClickListener {
+            startActivity(Intent(this@MainActivity, RegionSelectorActivity::class.java))
+        }
         stopBtn.setOnClickListener {
             stopService(Intent(this, ScreenCaptureService::class.java))
             stopService(Intent(this, OverlayService::class.java))
