@@ -9,8 +9,8 @@ import java.util.concurrent.TimeUnit
 object TranslateHelper {
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
     fun translate(apiKey: String, text: String): String {

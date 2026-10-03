@@ -98,7 +98,7 @@ class ScreenCaptureService : Service() {
                     val bitmap = captureFrame()
                     if (bitmap != null) {
                         val jpText = OcrHelper.recognize(bitmap)
-                        if (jpText.isNotBlank()) {
+                        if (jpText.isNotBlank() && containsJapanese(jpText)) {
                             val apiKey = getSharedPreferences("settings", Context.MODE_PRIVATE)
                                 .getString("deepl_key", "") ?: ""
                             val ruText = TranslateHelper.translate(apiKey, jpText)
@@ -157,5 +157,14 @@ class ScreenCaptureService : Service() {
         imageReader?.close()
         projection?.stop()
         super.onDestroy()
+    }
+
+    private fun containsJapanese(text: String): Boolean {
+        for (c in text) {
+            val code = c.code
+            if (code in 0x3040..0x30FF) return true
+            if (code in 0x4E00..0x9FAF) return true
+        }
+        return false
     }
 }
