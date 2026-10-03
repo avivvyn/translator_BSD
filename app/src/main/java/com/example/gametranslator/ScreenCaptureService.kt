@@ -16,6 +16,8 @@ import android.util.DisplayMetrics
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
+import android.os.Handler
+import android.os.Looper
 
 class ScreenCaptureService : Service() {
 
