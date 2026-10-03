@@ -26,21 +26,27 @@ class ScreenCaptureService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(1, buildNotification())
+override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    val resultCode = intent?.getIntExtra("resultCode", 0) ?: return START_NOT_STICKY
+    val data = intent.getParcelableExtra<Intent>("data") ?: return START_NOT_STICKY
 
-        val resultCode = intent?.getIntExtra("resultCode", 0) ?: return START_NOT_STICKY
-        val data = intent.getParcelableExtra<Intent>("data") ?: return START_NOT_STICKY
+    val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+    projection = mpm.getMediaProjection(resultCode, data)
 
-        val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        projection = mpm.getMediaProjection(resultCode, data)
+    // Регистрируем колбэк ДО старта foreground-сервиса — критично для Android 14+
+    projection?.registerCallback(object : MediaProjection.Callback() {
+        override fun onStop() {
+            stopSelf()
+        }
+    }, Handler(Looper.getMainLooper()))
 
-        startCapture()
-        startProcessingLoop()
+    startForeground(1, buildNotification())
 
-        return START_STICKY
-    }
+    startCapture()
+    startProcessingLoop()
 
+    return START_STICKY
+}
     private fun buildNotification(): Notification {
         val channelId = "capture_channel"
         if (Build.VERSION.SDK_INT >= 26) {
