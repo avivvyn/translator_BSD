@@ -12,6 +12,13 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
 
+private const val NONE = 0
+private const val MOVE = 1
+private const val LEFT = 2
+private const val TOP = 3
+private const val RIGHT = 4
+private const val BOTTOM = 5
+
 class FloatingButtonService : Service() {
 
     private lateinit var windowManager: WindowManager
@@ -197,15 +204,6 @@ class FloatingButtonService : Service() {
             textSize = 60f
             textAlign = Paint.Align.CENTER
             isAntiAlias = true
-        }
-
-        companion object {
-            const val NONE = 0
-            const val MOVE = 1
-            const val LEFT = 2
-            const val TOP = 3
-            const val RIGHT = 4
-            const val BOTTOM = 5
         }
 
         override fun onDraw(canvas: Canvas) {
