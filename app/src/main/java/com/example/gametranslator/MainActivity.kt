@@ -61,6 +61,12 @@ class MainActivity : AppCompatActivity() {
             startService(Intent(this@MainActivity, FloatingButtonService::class.java))
             Toast.makeText(this, "Плавающая кнопка ⚙ включена", Toast.LENGTH_LONG).show()
         }
+        stopBtn.setOnClickListener {
+            stopService(Intent(this, ScreenCaptureService::class.java))
+            stopService(Intent(this, OverlayService::class.java))
+            stopService(Intent(this, FloatingButtonService::class.java))
+            Toast.makeText(this, "Stopped", Toast.LENGTH_SHORT).show()
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
