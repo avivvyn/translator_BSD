@@ -21,10 +21,6 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".RegionSelectorActivity"
-            android:exported="false"/>
-
         <service
             android:name=".ScreenCaptureService"
             android:foregroundServiceType="mediaProjection"
