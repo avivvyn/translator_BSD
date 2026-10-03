@@ -151,7 +151,6 @@ class ScreenCaptureService : Service() {
             img.close()
         }
     }
-    }
     override fun onDestroy() {
         scope.cancel()
         virtualDisplay?.release()
