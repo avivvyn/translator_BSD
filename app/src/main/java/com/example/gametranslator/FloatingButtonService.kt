@@ -1,7 +1,5 @@
 package com.example.gametranslator
 
-package com.example.gametranslator
-
 import android.app.Service
 import android.content.Intent
 import android.graphics.PixelFormat
