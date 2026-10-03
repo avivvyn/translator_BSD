@@ -11,13 +11,13 @@ import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.DisplayMetrics
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
-import android.os.Handler
-import android.os.Looper
 
 class ScreenCaptureService : Service() {
 
@@ -28,27 +28,31 @@ class ScreenCaptureService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    val resultCode = intent?.getIntExtra("resultCode", 0) ?: return START_NOT_STICKY
-    val data = intent.getParcelableExtra<Intent>("data") ?: return START_NOT_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val resultCode = intent?.getIntExtra("resultCode", 0) ?: return START_NOT_STICKY
+        val data = intent.getParcelableExtra<Intent>("data") ?: return START_NOT_STICKY
 
-    val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-    projection = mpm.getMediaProjection(resultCode, data)
+        // ШАГ 1: Запускаем foreground-сервис с типом mediaProjection ДО всего
+        startForeground(1, buildNotification())
 
-    // Регистрируем колбэк ДО старта foreground-сервиса — критично для Android 14+
-    projection?.registerCallback(object : MediaProjection.Callback() {
-        override fun onStop() {
-            stopSelf()
-        }
-    }, Handler(Looper.getMainLooper()))
+        // ШАГ 2: Получаем MediaProjection ПОСЛЕ startForeground
+        val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        projection = mpm.getMediaProjection(resultCode, data)
 
-    startForeground(1, buildNotification())
+        // ШАГ 3: Регистрируем callback ДО createVirtualDisplay
+        projection?.registerCallback(object : MediaProjection.Callback() {
+            override fun onStop() {
+                stopSelf()
+            }
+        }, Handler(Looper.getMainLooper()))
 
-    startCapture()
-    startProcessingLoop()
+        // ШАГ 4: Создаём виртуальный дисплей и начинаем цикл
+        startCapture()
+        startProcessingLoop()
 
-    return START_STICKY
-}
+        return START_STICKY
+    }
+
     private fun buildNotification(): Notification {
         val channelId = "capture_channel"
         if (Build.VERSION.SDK_INT >= 26) {
