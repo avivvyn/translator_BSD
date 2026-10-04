@@ -29,14 +29,23 @@ object MangaOcrHelper {
     private const val HEAD_DIM = 64                 // 768 / 12
 
     fun initialize(context: Context) {
-        if (encoderSession != null) return
+        Log.d(TAG, ">>> initialize() ВЫЗВАН")
 
+        if (encoderSession != null) {
+            Log.d(TAG, ">>> уже инициализирован, выходим")
+            return
+        }
+
+        Log.d(TAG, ">>> начинаю инициализацию...")
         Log.d(TAG, "Инициализация Manga OCR...")
         env = OrtEnvironment.getEnvironment()
+        Log.d(TAG, ">>> OrtEnvironment получен")
 
         val encoderFile = copyAssetToFiles(context, "encoder_model.onnx")
         val decoderFile = copyAssetToFiles(context, "decoder_model.onnx")
 
+        Log.d(TAG, ">>> encoder скопирован: ${encoderFile.absolutePath} (${encoderFile.length()} байт)")
+        Log.d(TAG, ">>> decoder скопирован: ${decoderFile.absolutePath} (${decoderFile.length()} байт)")
         val options = OrtSession.SessionOptions().apply {
             setIntraOpNumThreads(4)
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
