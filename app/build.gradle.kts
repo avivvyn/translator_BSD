@@ -4,6 +4,11 @@ plugins {
 android {
     namespace = "com.example.gametranslator"
     compileSdk = 34
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 
     defaultConfig {
         applicationId = "com.example.gametranslator"
