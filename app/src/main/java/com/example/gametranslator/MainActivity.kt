@@ -3,16 +3,17 @@ package com.example.gametranslator
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
@@ -20,28 +21,26 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
 
-        // Инициализация Manga OCR в отдельном потоке
-        Thread {
-            try {
-                MangaOcrHelper.initialize(this@MainActivity)
-                runOnUiThread {
-                    Toast.makeText(this@MainActivity, "Manga OCR готов", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                val errorMsg = e.message ?: "unknown"
-                runOnUiThread {
-                    Toast.makeText(this@MainActivity, "Manga OCR: $errorMsg", Toast.LENGTH_LONG).show()
-                }
-            }
-        }.start()
+        // 1) Ссылки на View — в самом начале, после setContentView
         val apiKeyInput = findViewById<EditText>(R.id.apiKeyInput)
-        val startBtn = findViewById<Button>(R.id.startButton)
-        val stopBtn = findViewById<Button>(R.id.stopButton)
+        val startBtn    = findViewById<Button>(R.id.startButton)
+        val stopBtn     = findViewById<Button>(R.id.stopButton)
+        val regionBtn   = findViewById<Button>(R.id.regionButton)
 
-        val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+        Log.d("MAIN", "apiKeyInput = $apiKeyInput")
+        Log.d("MAIN", "startBtn    = $startBtn")
+        Log.d("MAIN", "stopBtn     = $stopBtn")
+        Log.d("MAIN", "regionBtn   = $regionBtn")
+
+        // 2) SharedPreferences для ключа
+        val prefs: SharedPreferences =
+            getSharedPreferences("settings", Context.MODE_PRIVATE)
+
         apiKeyInput.setText(prefs.getString("deepl_key", ""))
 
+        // 3) Кнопка Start — сохранение ключа и запрос проекции экрана
         startBtn.setOnClickListener {
             val key = apiKeyInput.text.toString().trim()
             if (key.isEmpty()) {
@@ -52,35 +51,67 @@ class MainActivity : AppCompatActivity() {
 
             if (!Settings.canDrawOverlays(this)) {
                 Toast.makeText(this, "Allow overlay", Toast.LENGTH_LONG).show()
-                startActivity(Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
-                ))
+                startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    )
+                )
                 return@setOnClickListener
             }
 
             val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             startActivityForResult(mpm.createScreenCaptureIntent(), REQUEST_CAPTURE)
         }
-        val regionBtn = findViewById<Button>(R.id.regionButton)
+
+        // 4) Кнопка выбора области (плавающая кнопка)
         regionBtn.setOnClickListener {
             if (!Settings.canDrawOverlays(this)) {
                 Toast.makeText(this, "Разреши оверлей", Toast.LENGTH_LONG).show()
-                startActivity(Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
-                ))
+                startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    )
+                )
                 return@setOnClickListener
             }
             startService(Intent(this@MainActivity, FloatingButtonService::class.java))
             Toast.makeText(this, "Плавающая кнопка ⚙ включена", Toast.LENGTH_LONG).show()
         }
+
+        // 5) Кнопка Stop
         stopBtn.setOnClickListener {
             stopService(Intent(this, ScreenCaptureService::class.java))
             stopService(Intent(this, OverlayService::class.java))
             stopService(Intent(this, FloatingButtonService::class.java))
             Toast.makeText(this, "Stopped", Toast.LENGTH_SHORT).show()
         }
+
+        // 6) Инициализация Manga OCR в фоновом потоке — В САМОМ КОНЦЕ,
+        //    чтобы случайно не вложить туда UI-код
+        Thread {
+            try {
+                MangaOcrHelper.initialize(this@MainActivity)
+                runOnUiThread {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Manga OCR готов",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } catch (e: Exception) {
+                val errorMsg = e.message ?: "unknown"
+                Log.e("MAIN", "Ошибка инициализации Manga OCR", e)
+                runOnUiThread {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Manga OCR: $errorMsg",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }.start()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
