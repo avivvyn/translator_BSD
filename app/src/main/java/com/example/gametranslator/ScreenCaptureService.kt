@@ -97,7 +97,7 @@ class ScreenCaptureService : Service() {
                 try {
                     val bitmap = captureFrame()
                     if (bitmap != null) {
-                        val jpText = OcrHelper.recognize(bitmap)
+                        val jpText = MangaOcrHelper.recognize(bitmap)
                         if (jpText.isNotBlank() && containsJapanese(jpText)) {
                             val apiKey = getSharedPreferences("settings", Context.MODE_PRIVATE)
                                 .getString("deepl_key", "") ?: ""
@@ -108,7 +108,7 @@ class ScreenCaptureService : Service() {
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
-                delay(2000)
+                delay(3000)
             }
         }
     }

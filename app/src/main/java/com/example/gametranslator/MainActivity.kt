@@ -12,6 +12,7 @@ import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
@@ -19,8 +20,21 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
 
+        val job = kotlinx.coroutines.Job()
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + job)
+        scope.launch {
+            try {
+                MangaOcrHelper.initialize(this@MainActivity)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Manga OCR готов", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Manga OCR: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
         val apiKeyInput = findViewById<EditText>(R.id.apiKeyInput)
         val startBtn = findViewById<Button>(R.id.startButton)
         val stopBtn = findViewById<Button>(R.id.stopButton)
