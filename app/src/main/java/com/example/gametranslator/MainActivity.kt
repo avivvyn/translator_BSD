@@ -21,6 +21,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.d("MAIN", "!!!!! onCreate STARTED !!!!!")
         setContentView(R.layout.activity_main)
 
         // 1) Ссылки на View — в самом начале, после setContentView
