@@ -10,6 +10,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.nio.FloatBuffer
 import java.nio.LongBuffer
+import java.util.concurrent.atomic.AtomicBoolean
 
 object MangaOcrHelper {
 
@@ -19,193 +20,265 @@ object MangaOcrHelper {
     private var encoderSession: OrtSession? = null
     private var decoderSession: OrtSession? = null
 
-    private const val IMAGE_SIZE = 224
-    private const val MAX_LENGTH = 300
-    private const val DECODER_START_TOKEN = 2L      // <s>
-    private const val EOS_TOKEN = 3L                // </s>
-    private const val PAD_TOKEN = 0L
-    private const val NUM_LAYERS = 2
-    private const val NUM_HEADS = 12
-    private const val HEAD_DIM = 64                 // 768 / 12
+    // vocab.txt: id -> строка символа. Загружается из assets при initialize.
+    private var vocab: List<String> = emptyList()
 
+    private const val IMAGE_SIZE = 224
+    private const val MAX_LENGTH = 200
+    private const val DECODER_START_TOKEN = 2L
+    private const val EOS_TOKEN = 3L
+    private const val PAD_TOKEN = 0L
+
+    // Mean/Std из preprocessor_config.json (0.5 / 0.5)
+    private val MEAN = floatArrayOf(0.5f, 0.5f, 0.5f)
+    private val STD  = floatArrayOf(0.5f, 0.5f, 0.5f)
+
+    private val initialized = AtomicBoolean(false)
+
+    /** Готов ли OCR к работе. Проверяется в ScreenCaptureService. */
+    fun isReady(): Boolean = initialized.get()
+
+    /**
+     * Инициализация: копирует .onnx в filesDir (если ещё не скопированы),
+     * загружает vocab.txt и создаёт ORT-сессии.
+     */
     fun initialize(context: Context) {
         Log.d(TAG, ">>> initialize() ВЫЗВАН")
 
-        if (encoderSession != null) {
-            Log.d(TAG, ">>> уже инициализирован, выходим")
+        if (initialized.get()) {
+            Log.d(TAG, ">>> уже инициализирован")
             return
         }
 
-        Log.d(TAG, ">>> начинаю инициализацию...")
-        Log.d(TAG, "Инициализация Manga OCR...")
-        env = OrtEnvironment.getEnvironment()
-        Log.d(TAG, ">>> OrtEnvironment получен")
+        synchronized(this) {
+            if (initialized.get()) return
 
-        val encoderFile = copyAssetToFiles(context, "encoder_model.onnx")
-        val decoderFile = copyAssetToFiles(context, "decoder_model.onnx")
+            try {
+                Log.d(TAG, ">>> OrtEnvironment.getEnvironment()")
+                env = OrtEnvironment.getEnvironment()
 
-        Log.d(TAG, ">>> encoder скопирован: ${encoderFile.absolutePath} (${encoderFile.length()} байт)")
-        Log.d(TAG, ">>> decoder скопирован: ${decoderFile.absolutePath} (${decoderFile.length()} байт)")
-        val options = OrtSession.SessionOptions().apply {
-            setIntraOpNumThreads(4)
-            setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                Log.d(TAG, ">>> Загружаю vocab.txt из assets")
+                vocab = context.assets.open("vocab.txt").bufferedReader(Charsets.UTF_8)
+                    .useLines { it.toList() }
+                Log.d(TAG, ">>> vocab.txt загружен, размер = ${vocab.size}")
+
+                Log.d(TAG, ">>> Копирую encoder_model.onnx")
+                val encoderFile = copyAssetToFiles(context, "encoder_model.onnx")
+                Log.d(TAG, ">>> encoder_model.onnx готов: ${encoderFile.length()} байт")
+
+                Log.d(TAG, ">>> Копирую decoder_model.onnx")
+                val decoderFile = copyAssetToFiles(context, "decoder_model.onnx")
+                Log.d(TAG, ">>> decoder_model.onnx готов: ${decoderFile.length()} байт")
+
+                val options = OrtSession.SessionOptions().apply {
+                    setIntraOpNumThreads(4)
+                    setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                }
+
+                Log.d(TAG, ">>> Создаю encoderSession")
+                encoderSession = env!!.createSession(encoderFile.absolutePath, options)
+                Log.d(TAG, ">>> encoderSession создан")
+                Log.d(TAG, ">>> encoder inputs  = ${encoderSession!!.inputNames}")
+                Log.d(TAG, ">>> encoder outputs = ${encoderSession!!.outputNames}")
+
+                Log.d(TAG, ">>> Создаю decoderSession")
+                decoderSession = env!!.createSession(decoderFile.absolutePath, options)
+                Log.d(TAG, ">>> decoderSession создан")
+                Log.d(TAG, ">>> decoder inputs  = ${decoderSession!!.inputNames}")
+                Log.d(TAG, ">>> decoder outputs = ${decoderSession!!.outputNames}")
+
+                initialized.set(true)
+                Log.d(TAG, ">>> Manga OCR ГОТОВ К РАБОТЕ")
+            } catch (e: Throwable) {
+                Log.e(TAG, ">>> ОШИБКА ИНИЦИАЛИЗАЦИИ: ${e.message}", e)
+                initialized.set(false)
+                throw e
+            }
         }
-
-        encoderSession = env!!.createSession(encoderFile.absolutePath, options)
-        decoderSession = env!!.createSession(decoderFile.absolutePath, options)
-
-        Log.d(TAG, "Manga OCR готов")
     }
 
     /**
-     * Копирует файл из assets во внутреннюю папку. Большие .onnx нельзя открыть напрямую из assets.
+     * Копирует большой .onnx из assets во внутреннюю папку. Стримит чанками, чтобы не словить OOM.
      */
     private fun copyAssetToFiles(context: Context, name: String): File {
         val target = File(context.filesDir, name)
-        if (target.exists() && target.length() > 0) return target
+        // Если уже скопирован и размер совпадает — переиспользуем
+        val assetSize = context.assets.openFd(name).use { it.length }
+        if (target.exists() && target.length() == assetSize) {
+            Log.d(TAG, "$name уже скопирован ранее, размер совпадает")
+            return target
+        }
 
-        Log.d(TAG, "Копирую $name в filesDir...")
+        Log.d(TAG, "Копирую $name ($assetSize байт)...")
         context.assets.open(name).use { input ->
             FileOutputStream(target).use { output ->
-                input.copyTo(output, bufferSize = 8192)
+                val buffer = ByteArray(64 * 1024) // 64 КБ
+                var total = 0L
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read <= 0) break
+                    output.write(buffer, 0, read)
+                    total += read
+                }
+                output.flush()
+                Log.d(TAG, "Скопировано $name, всего $total байт")
             }
         }
-        Log.d(TAG, "Скопирован $name (${target.length()} байт)")
         return target
     }
 
     /**
-     * Распознаёт японский текст с картинки.
+     * Распознаёт японский текст с bitmap. Возвращает строку (или "" при ошибке).
      */
     fun recognize(bitmap: Bitmap): String {
-        if (encoderSession == null || decoderSession == null) {
-            Log.e(TAG, "Сессия не инициализирована")
+        if (!initialized.get()) {
+            Log.e(TAG, "recognize(): ещё не инициализирован")
             return ""
         }
 
         return try {
-            val pixelValues = preprocess(bitmap)
+            val pixels = preprocess(bitmap)
 
-            // 1) Прогон encoder
+            // 1) Encoder forward
+            val encInputName = encoderSession!!.inputNames.first() // должно быть "pixel_values"
+            Log.d(TAG, "encoder input name = $encInputName")
+
+            val inputBuffer = FloatBuffer.allocate(pixels.size)
+            inputBuffer.put(pixels)
+            inputBuffer.rewind()
+
             val encoderInput = OnnxTensor.createTensor(
-                env,
-                FloatBuffer.wrap(pixelValues),
+                env, inputBuffer,
                 longArrayOf(1, 3, IMAGE_SIZE.toLong(), IMAGE_SIZE.toLong())
             )
-            val encoderOutputs = encoderSession!!.run(
-                mapOf("pixel_values" to encoderInput)
-            )
-            val encoderHiddenStates = encoderOutputs[0]
 
-            // 2) Генерация токенов
-            val generatedTokens = generateTokens(encoderOutputs)
+            val encoderResult = encoderSession!!.run(mapOf(encInputName to encoderInput))
+            Log.d(TAG, "encoder output names = ${encoderResult.map { it.key }}")
 
-            // 3) Освобождение
+            // 2) Greedy decoding
+            val tokens = generateTokens(encoderResult)
+
             encoderInput.close()
-            encoderOutputs.close()
+            encoderResult.close()
 
-            Log.d(TAG, "Токены: $generatedTokens")
-            decodeTokens(generatedTokens)
-        } catch (e: Exception) {
-            Log.e(TAG, "Ошибка распознавания: ${e.message}", e)
+            val text = decodeTokens(tokens)
+            Log.d(TAG, "recognize() -> tokens=$tokens text='$text'")
+            text
+        } catch (e: Throwable) {
+            Log.e(TAG, "recognize() ошибка: ${e.message}", e)
             ""
         }
     }
 
+    /**
+     * Препроцессинг: resize до 224×224, нормализация (x/255 - 0.5) / 0.5, CHW.
+     */
     private fun preprocess(bitmap: Bitmap): FloatArray {
         val resized = Bitmap.createScaledBitmap(bitmap, IMAGE_SIZE, IMAGE_SIZE, true)
-        val floatArray = FloatArray(3 * IMAGE_SIZE * IMAGE_SIZE)
-
-        // ImageNet нормализация
-        val mean = floatArrayOf(0.485f, 0.456f, 0.406f)
-        val std = floatArrayOf(0.229f, 0.224f, 0.225f)
-
+        val out = FloatArray(3 * IMAGE_SIZE * IMAGE_SIZE)
         val pixels = IntArray(IMAGE_SIZE * IMAGE_SIZE)
         resized.getPixels(pixels, 0, IMAGE_SIZE, 0, 0, IMAGE_SIZE, IMAGE_SIZE)
 
+        val planeSize = IMAGE_SIZE * IMAGE_SIZE
         for (i in pixels.indices) {
             val p = pixels[i]
             val r = ((p shr 16) and 0xFF) / 255f
             val g = ((p shr 8) and 0xFF) / 255f
             val b = (p and 0xFF) / 255f
 
-            floatArray[i] = (r - mean[0]) / std[0]
-            floatArray[IMAGE_SIZE * IMAGE_SIZE + i] = (g - mean[1]) / std[1]
-            floatArray[2 * IMAGE_SIZE * IMAGE_SIZE + i] = (b - mean[2]) / std[2]
+            out[i]             = (r - MEAN[0]) / STD[0]
+            out[planeSize + i]     = (g - MEAN[1]) / STD[1]
+            out[2 * planeSize + i] = (b - MEAN[2]) / STD[2]
         }
-        return floatArray
+        return out
     }
 
-    private fun generateTokens(encoderOutputs: ai.onnxruntime.OrtSession.Result): List<Long> {
-        val tokens = mutableListOf(DECODER_START_TOKEN)
+    /**
+     * Greedy-генерация токенов. Без past_key_values — медленно, но надёжно.
+     */
+    private fun generateTokens(encoderResult: OrtSession.Result): List<Long> {
+        // Берём первый выход encoder'а (обычно last_hidden_state)
+        val encoderOut = encoderResult[0] as OnnxTensor
+        Log.d(TAG, "encoder output shape = ${encoderOut.info.shape.contentToString()}")
 
-        // Кэш attention для всех слоёв
-        val pastKeys = Array(NUM_LAYERS) {
-            OnnxTensor.createTensor(
-                env, FloatBuffer.allocate(0),
-                longArrayOf(1, NUM_HEADS.toLong(), 0, HEAD_DIM.toLong())
-            )
-        }
-        val pastValues = Array(NUM_LAYERS) {
-            OnnxTensor.createTensor(
-                env, FloatBuffer.allocate(0),
-                longArrayOf(1, NUM_HEADS.toLong(), 0, HEAD_DIM.toLong())
-            )
-        }
+        val tokens = mutableListOf(DECODER_START_TOKEN)
+        val decoderInputNames = decoderSession!!.inputNames
+        Log.d(TAG, "decoder input names = $decoderInputNames")
+
+        // Ищем имя входа для encoder_hidden_states
+        val encoderStatesName = decoderInputNames.firstOrNull {
+            it.contains("encoder_hidden", ignoreCase = true) || it == "encoder_hidden_states"
+        } ?: decoderInputNames.firstOrNull { it != "input_ids" }
+
+        // Имя входа для input_ids
+        val inputIdsName = decoderInputNames.firstOrNull {
+            it.contains("input_ids", ignoreCase = true)
+        } ?: decoderInputNames.first()
+
+        Log.d(TAG, "inputIdsName=$inputIdsName, encoderStatesName=$encoderStatesName")
 
         for (step in 0 until MAX_LENGTH) {
+            val longBuf = LongBuffer.allocate(tokens.size)
+            longBuf.put(tokens.toLongArray())
+            longBuf.rewind()
+
             val inputIds = OnnxTensor.createTensor(
-                env,
-                LongBuffer.wrap(tokens.toLongArray()),
-                longArrayOf(1, tokens.size.toLong())
+                env, longBuf, longArrayOf(1, tokens.size.toLong())
             )
 
             val inputs = mutableMapOf<String, OnnxTensor>()
-            inputs["input_ids"] = inputIds
-            inputs["encoder_hidden_states"] = encoderOutputs[0] as OnnxTensor
-            for (i in 0 until NUM_LAYERS) {
-                inputs["past_key_values.$i.encoder.key"] = pastKeys[i]
-                inputs["past_key_values.$i.encoder.value"] = pastValues[i]
-                inputs["past_key_values.$i.decoder.key"] = pastValues[i]
-                inputs["past_key_values.$i.decoder.value"] = pastValues[i]
+            inputs[inputIdsName] = inputIds
+            if (encoderStatesName != null) {
+                inputs[encoderStatesName] = encoderOut
             }
 
             val outputs = decoderSession!!.run(inputs)
-            val logits = outputs[0].value as OnnxTensor
+            val logitsTensor = outputs[0].value as OnnxTensor
+            val shape = logitsTensor.info.shape
+            Log.d(TAG, "step=$step logits shape=${shape.contentToString()}")
 
-            // Берём argmax последнего токена
-            val logitsArray = logits.floatBuffer
-            val vocabSize = 6144
-            val seqLen = tokens.size
+            val logitsBuf = logitsTensor.floatBuffer
+            val vocabSize = shape.last().toInt()
+            val seqLen = if (shape.size >= 2) shape[shape.size - 2].toInt() else 1
             val lastIdx = (seqLen - 1) * vocabSize
 
             var maxIdx = 0
             var maxVal = Float.NEGATIVE_INFINITY
             for (v in 0 until vocabSize) {
-                val value = logitsArray.get(lastIdx + v)
+                val value = logitsBuf.get(lastIdx + v)
                 if (value > maxVal) {
                     maxVal = value
                     maxIdx = v
                 }
             }
 
-            val nextToken = maxIdx.toLong()
             inputIds.close()
-            logits.close()
             outputs.close()
 
+            val nextToken = maxIdx.toLong()
+            Log.d(TAG, "step=$step nextToken=$nextToken")
             if (nextToken == EOS_TOKEN || nextToken == PAD_TOKEN) break
             tokens.add(nextToken)
         }
 
-        pastKeys.forEach { it.close() }
-        pastValues.forEach { it.close() }
         return tokens
     }
 
+    /**
+     * Преобразует список id в строку через vocab.txt.
+     */
     private fun decodeTokens(tokens: List<Long>): String {
-        // TODO: загрузка vocab.txt и маппинг id → символ
-        return tokens.joinToString(" ") { it.toString() }
+        val sb = StringBuilder()
+        for (t in tokens) {
+            // Пропускаем служебные
+            if (t == DECODER_START_TOKEN || t == EOS_TOKEN || t == PAD_TOKEN) continue
+            val idx = t.toInt()
+            if (idx in vocab.indices) {
+                val s = vocab[idx]
+                if (s.startsWith("[") || s.startsWith("<")) continue // спец-токены
+                sb.append(s)
+            }
+        }
+        return sb.toString()
     }
 }
-

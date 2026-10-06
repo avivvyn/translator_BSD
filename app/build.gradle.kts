@@ -1,9 +1,11 @@
 plugins {
     id("com.android.application")
 }
+
 android {
     namespace = "com.example.gametranslator"
     compileSdk = 34
+
     packaging {
         jniLibs {
             useLegacyPackaging = true
@@ -23,6 +25,7 @@ android {
             isMinifyEnabled = false
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -30,13 +33,10 @@ android {
 }
 
 dependencies {
-    implementation("com.google.mlkit:text-recognition-japanese:16.0.0")
     implementation("androidx.core:core-ktx:1.13.1")
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.17.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("cz.adaptech.tesseract4android:tesseract4android:4.7.0")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.17.0")
 }
